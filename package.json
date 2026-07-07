@@ -1,0 +1,13 @@
+{
+  "name": "solidity-skill-test",
+  "version": "1.0.0",
+  "description": "Solidity skill test — Vault contract",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.5"
+  }
+}
