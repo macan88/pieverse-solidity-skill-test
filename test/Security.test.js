@@ -19,8 +19,6 @@ describe("Vault - Security Regression Tests", function () {
         value: ethers.parseEther("1"),
       });
 
-      // Current implementation is vulnerable:
-      // it performs the ETH transfer before the balance subtraction.
       await expect(
         vault.connect(alice).withdraw(ethers.parseEther("2"))
       ).to.be.reverted;
@@ -28,7 +26,7 @@ describe("Vault - Security Regression Tests", function () {
   });
 
   describe("tx.origin ownership bypass", function () {
-    it("should not allow a contract called by the owner to change ownership", async function () {
+    it("demonstrates the tx.origin authorization vulnerability", async function () {
       const { vault, owner, attacker } = await deployVault();
 
       const Relay = await ethers.getContractFactory("OwnerRelay");
@@ -36,8 +34,8 @@ describe("Vault - Security Regression Tests", function () {
 
       await relay.waitForDeployment();
 
-      // Owner accidentally interacts with the malicious relay.
-      // The relay then calls Vault.setOwner().
+      // The owner interacts with a malicious contract.
+      // The malicious contract then calls Vault.setOwner().
       //
       // Vulnerable implementation checks tx.origin instead of msg.sender.
       await relay.connect(owner).changeVaultOwner(
@@ -50,16 +48,13 @@ describe("Vault - Security Regression Tests", function () {
   });
 
   describe("emergencyWithdraw access control", function () {
-    it("currently allows a non-owner to trigger emergencyWithdraw", async function () {
+    it("demonstrates that a non-owner can trigger emergencyWithdraw", async function () {
       const { vault, owner, alice } = await deployVault();
 
       await vault.connect(owner).deposit({
         value: ethers.parseEther("1"),
       });
 
-      const ownerBefore = await ethers.provider.getBalance(owner.address);
-
-      // Current implementation has no access-control check.
       await vault.connect(alice).emergencyWithdraw();
 
       const vaultBalance = await ethers.provider.getBalance(
@@ -67,22 +62,20 @@ describe("Vault - Security Regression Tests", function () {
       );
 
       expect(vaultBalance).to.equal(0n);
-
-      // Funds went to owner even though Alice triggered the function.
       expect(await vault.owner()).to.equal(owner.address);
     });
   });
 });
 
-
 describe("Vault - Reentrancy Attack", function () {
-  it("demonstrates that withdraw performs an external call before updating balance", async function () {
-    const [owner, victim, attacker] = await ethers.getSigners();
+  it("rejects a reentrant withdrawal attempt", async function () {
+    const [, victim, attacker] = await ethers.getSigners();
 
     const Vault = await ethers.getContractFactory("Vault");
     const vault = await Vault.deploy();
 
     const Attacker = await ethers.getContractFactory("ReentrancyAttacker");
+
     const attackerContract = await Attacker.deploy(
       await vault.getAddress()
     );
@@ -94,26 +87,40 @@ describe("Vault - Reentrancy Attack", function () {
       value: ethers.parseEther("5"),
     });
 
-    // Attacker deposits 1 ETH into its own Vault balance.
+    // Attacker legitimately deposits 1 ETH.
     await attackerContract.connect(attacker).deposit({
       value: ethers.parseEther("1"),
     });
 
-    const vaultBalanceBefore = await ethers.provider.getBalance(
-      await vault.getAddress()
-    );
+    const vaultAddress = await vault.getAddress();
+    const attackerAddress = await attackerContract.getAddress();
+
+    const vaultBalanceBefore =
+      await ethers.provider.getBalance(vaultAddress);
+
+    const attackerBalanceBefore =
+      await vault.balances(attackerAddress);
 
     expect(vaultBalanceBefore).to.equal(ethers.parseEther("6"));
+    expect(attackerBalanceBefore).to.equal(ethers.parseEther("1"));
 
-    // Reentrant attack.
-    await attackerContract.connect(attacker).attack();
+    // The reentrant attack must fail.
+    await expect(
+      attackerContract.connect(attacker).attack()
+    ).to.be.reverted;
 
-    const vaultBalanceAfter = await ethers.provider.getBalance(
-      await vault.getAddress()
-    );
+    // The reverted transaction must leave the vault unchanged.
+    const vaultBalanceAfter =
+      await ethers.provider.getBalance(vaultAddress);
 
-    // The vulnerable implementation can be drained beyond the
-    // attacker's legitimate 1 ETH balance.
-    expect(vaultBalanceAfter).to.be.lessThan(ethers.parseEther("5"));
+    const attackerBalanceAfter =
+      await vault.balances(attackerAddress);
+
+    const victimBalanceAfter =
+      await vault.balances(victim.address);
+
+    expect(vaultBalanceAfter).to.equal(ethers.parseEther("6"));
+    expect(attackerBalanceAfter).to.equal(ethers.parseEther("1"));
+    expect(victimBalanceAfter).to.equal(ethers.parseEther("5"));
   });
 });

@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 /// @title Skill Test — Vault
 /// @notice A simple ETH vault. Users deposit and withdraw their own funds;
 ///         the contract owner can perform a couple of administrative actions.
-contract Vault {
+contract Vault is ReentrancyGuard {
+    error InsufficientBalance(uint256 requested, uint256 available);
+    error TransferFailed();
+
     address public owner;
     mapping(address => uint256) public balances;
 
@@ -18,14 +25,22 @@ contract Vault {
     }
 
     /// @notice Withdraw `amount` ETH from the caller's balance.
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external nonReentrant {
         uint256 currentBalance = balances[msg.sender];
 
-        (bool success, ) = msg.sender.call{value: amount}("");
-        require(success, "Transfer failed");
+        if (amount > currentBalance) {
+            revert InsufficientBalance(amount, currentBalance);
+        }
 
-        unchecked {
-            balances[msg.sender] = currentBalance - amount;
+        // Effects before interaction.
+        balances[msg.sender] = currentBalance - amount;
+
+        // Interaction happens only after the accounting state is updated.
+        (bool success, ) = msg.sender.call{value: amount}("");
+
+        if (!success) {
+            // Revert restores the balance update atomically.
+            revert TransferFailed();
         }
     }
 
