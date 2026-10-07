@@ -26,7 +26,7 @@ describe("Vault - Security Regression Tests", function () {
   });
 
   describe("tx.origin ownership bypass", function () {
-    it("demonstrates the tx.origin authorization vulnerability", async function () {
+    it("rejects an ownership change through a contract relay", async function () {
       const { vault, owner, attacker } = await deployVault();
 
       const Relay = await ethers.getContractFactory("OwnerRelay");
@@ -34,16 +34,14 @@ describe("Vault - Security Regression Tests", function () {
 
       await relay.waitForDeployment();
 
-      // The owner interacts with a malicious contract.
-      // The malicious contract then calls Vault.setOwner().
-      //
-      // Vulnerable implementation checks tx.origin instead of msg.sender.
-      await relay.connect(owner).changeVaultOwner(
-        await vault.getAddress(),
-        attacker.address
-      );
+      await expect(
+        relay.connect(owner).changeVaultOwner(
+          await vault.getAddress(),
+          attacker.address
+        )
+      ).to.be.revertedWith("Not owner");
 
-      expect(await vault.owner()).to.equal(attacker.address);
+      expect(await vault.owner()).to.equal(owner.address);
     });
   });
 
