@@ -12,6 +12,7 @@ contract Vault is ReentrancyGuard {
     error InsufficientBalance(uint256 requested, uint256 available);
     error TransferFailed();
     error ExceedsWithdrawalLimit(uint256 requested, uint256 maxAllowed);
+    error VaultPaused();
 
     event Deposited(address indexed user, uint256 amount, uint256 newBalance);
 
@@ -24,12 +25,18 @@ contract Vault is ReentrancyGuard {
     // the original withdrawal behavior until the owner configures a limit.
     uint256 public maxWithdrawal = type(uint256).max;
 
+    bool public paused;
+
     constructor() {
         owner = msg.sender;
     }
 
     /// @notice Deposit ETH into the caller's balance.
     function deposit() external payable {
+        if (paused) {
+            revert VaultPaused();
+        }
+
         balances[msg.sender] += msg.value;
 
         emit Deposited(msg.sender, msg.value, balances[msg.sender]);
@@ -38,6 +45,10 @@ contract Vault is ReentrancyGuard {
     /// @notice Withdraw ETH from the caller's balance.
     /// @dev Uses CEI and ReentrancyGuard as defense-in-depth.
     function withdraw(uint256 amount) external nonReentrant {
+        if (paused) {
+            revert VaultPaused();
+        }
+
         uint256 currentBalance = balances[msg.sender];
 
         if (amount > currentBalance) {
@@ -64,6 +75,13 @@ contract Vault is ReentrancyGuard {
         require(msg.sender == owner, "Not owner");
 
         maxWithdrawal = newMaxWithdrawal;
+    }
+
+    /// @notice Pause or unpause deposits and withdrawals.
+    function setPaused(bool newPaused) external {
+        require(msg.sender == owner, "Not owner");
+
+        paused = newPaused;
     }
 
     function setOwner(address newOwner) external {
