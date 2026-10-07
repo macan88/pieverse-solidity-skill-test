@@ -7,18 +7,32 @@ import {
 
 /// @title Skill Test — Vault
 /// @notice A simple ETH vault. Users deposit and withdraw their own funds;
-///         the contract owner can perform a couple of administrative actions.
+///         the contract owner can perform administrative actions.
 contract Vault is ReentrancyGuard {
     error InsufficientBalance(uint256 requested, uint256 available);
     error TransferFailed();
     error ExceedsWithdrawalLimit(uint256 requested, uint256 maxAllowed);
     error VaultPaused();
+    error ZeroAddress();
+    error NotPendingOwner();
 
     event Deposited(address indexed user, uint256 amount, uint256 newBalance);
 
     event Withdrawn(address indexed user, uint256 amount, uint256 newBalance);
 
+    event OwnershipTransferStarted(
+        address indexed previousOwner,
+        address indexed newOwner
+    );
+
+    event OwnershipTransferred(
+        address indexed previousOwner,
+        address indexed newOwner
+    );
+
     address public owner;
+    address public pendingOwner;
+
     mapping(address => uint256) public balances;
 
     // Unlimited by default so adding the feature does not change
@@ -84,13 +98,39 @@ contract Vault is ReentrancyGuard {
         paused = newPaused;
     }
 
-    function setOwner(address newOwner) external {
+    /// @notice Start a two-step ownership transfer.
+    /// @dev The new owner must explicitly accept ownership.
+    function transferOwnership(address newOwner) external {
         require(msg.sender == owner, "Not owner");
-        owner = newOwner;
+
+        if (newOwner == address(0)) {
+            revert ZeroAddress();
+        }
+
+        pendingOwner = newOwner;
+
+        emit OwnershipTransferStarted(owner, newOwner);
     }
 
+    /// @notice Accept ownership after the current owner has
+    ///         started the ownership transfer.
+    function acceptOwnership() external {
+        if (msg.sender != pendingOwner) {
+            revert NotPendingOwner();
+        }
+
+        address previousOwner = owner;
+
+        owner = msg.sender;
+        pendingOwner = address(0);
+
+        emit OwnershipTransferred(previousOwner, msg.sender);
+    }
+
+    /// @notice Withdraw all ETH held by the vault to the current owner.
     function emergencyWithdraw() external {
         require(msg.sender == owner, "Not owner");
+
         payable(owner).transfer(address(this).balance);
     }
 }
