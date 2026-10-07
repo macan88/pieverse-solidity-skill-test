@@ -53,6 +53,7 @@ contract Vault is ReentrancyGuard {
     /// @notice Sweep the entire contract balance to the owner. Intended as a
     ///         break-glass recovery mechanism.
     function emergencyWithdraw() external {
+        require(msg.sender == owner, "Not owner");
         payable(owner).transfer(address(this).balance);
     }
 }

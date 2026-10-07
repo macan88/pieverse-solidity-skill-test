@@ -46,21 +46,41 @@ describe("Vault - Security Regression Tests", function () {
   });
 
   describe("emergencyWithdraw access control", function () {
-    it("demonstrates that a non-owner can trigger emergencyWithdraw", async function () {
+    it("rejects emergencyWithdraw from a non-owner", async function () {
       const { vault, owner, alice } = await deployVault();
 
       await vault.connect(owner).deposit({
         value: ethers.parseEther("1"),
       });
 
-      await vault.connect(alice).emergencyWithdraw();
+      await expect(
+        vault.connect(alice).emergencyWithdraw()
+      ).to.be.revertedWith("Not owner");
+
+      const vaultBalance = await ethers.provider.getBalance(
+        await vault.getAddress()
+      );
+
+      expect(vaultBalance).to.equal(ethers.parseEther("1"));
+      expect(await vault.owner()).to.equal(owner.address);
+    });
+
+    it("allows the owner to trigger emergencyWithdraw", async function () {
+      const { vault, owner } = await deployVault();
+
+      await vault.connect(owner).deposit({
+        value: ethers.parseEther("1"),
+      });
+
+      await expect(
+        vault.connect(owner).emergencyWithdraw()
+      ).to.not.be.reverted;
 
       const vaultBalance = await ethers.provider.getBalance(
         await vault.getAddress()
       );
 
       expect(vaultBalance).to.equal(0n);
-      expect(await vault.owner()).to.equal(owner.address);
     });
   });
 });
@@ -80,12 +100,10 @@ describe("Vault - Reentrancy Attack", function () {
 
     await attackerContract.waitForDeployment();
 
-    // Victim deposits 5 ETH.
     await vault.connect(victim).deposit({
       value: ethers.parseEther("5"),
     });
 
-    // Attacker legitimately deposits 1 ETH.
     await attackerContract.connect(attacker).deposit({
       value: ethers.parseEther("1"),
     });
@@ -102,12 +120,10 @@ describe("Vault - Reentrancy Attack", function () {
     expect(vaultBalanceBefore).to.equal(ethers.parseEther("6"));
     expect(attackerBalanceBefore).to.equal(ethers.parseEther("1"));
 
-    // The reentrant attack must fail.
     await expect(
       attackerContract.connect(attacker).attack()
     ).to.be.reverted;
 
-    // The reverted transaction must leave the vault unchanged.
     const vaultBalanceAfter =
       await ethers.provider.getBalance(vaultAddress);
 
