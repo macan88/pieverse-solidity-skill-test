@@ -67,6 +67,95 @@ describe("Vault - Security Regression Tests", function () {
     });
   });
 
+  describe("Per-transaction withdrawal limit", function () {
+    it("defaults to unlimited withdrawals", async function () {
+      const { vault } = await deployVault();
+
+      expect(await vault.maxWithdrawal()).to.equal(
+        ethers.MaxUint256
+      );
+    });
+
+    it("allows the owner to configure maxWithdrawal", async function () {
+      const { vault, owner } = await deployVault();
+
+      const limit = ethers.parseEther("1");
+
+      await vault.connect(owner).setMaxWithdrawal(limit);
+
+      expect(await vault.maxWithdrawal()).to.equal(limit);
+    });
+
+    it("rejects maxWithdrawal changes from a non-owner", async function () {
+      const { vault, alice } = await deployVault();
+
+      const limit = ethers.parseEther("1");
+
+      await expect(
+        vault.connect(alice).setMaxWithdrawal(limit)
+      ).to.be.revertedWith("Not owner");
+
+      expect(await vault.maxWithdrawal()).to.equal(
+        ethers.MaxUint256
+      );
+    });
+
+    it("rejects a withdrawal above maxWithdrawal", async function () {
+      const { vault, owner, alice } = await deployVault();
+
+      const limit = ethers.parseEther("1");
+      const withdrawalAmount = ethers.parseEther("1.1");
+
+      await vault.connect(owner).setMaxWithdrawal(limit);
+
+      await vault.connect(alice).deposit({
+        value: ethers.parseEther("2"),
+      });
+
+      await expect(
+        vault.connect(alice).withdraw(withdrawalAmount)
+      )
+        .to.be.revertedWithCustomError(
+          vault,
+          "ExceedsWithdrawalLimit"
+        )
+        .withArgs(
+          withdrawalAmount,
+          limit
+        );
+
+      expect(await vault.balances(alice.address)).to.equal(
+        ethers.parseEther("2")
+      );
+    });
+
+    it("allows a withdrawal exactly equal to maxWithdrawal", async function () {
+      const { vault, owner, alice } = await deployVault();
+
+      const limit = ethers.parseEther("1");
+
+      await vault.connect(owner).setMaxWithdrawal(limit);
+
+      await vault.connect(alice).deposit({
+        value: ethers.parseEther("2"),
+      });
+
+      await expect(
+        vault.connect(alice).withdraw(limit)
+      )
+        .to.emit(vault, "Withdrawn")
+        .withArgs(
+          alice.address,
+          limit,
+          ethers.parseEther("1")
+        );
+
+      expect(await vault.balances(alice.address)).to.equal(
+        ethers.parseEther("1")
+      );
+    });
+  });
+
   describe("tx.origin ownership bypass", function () {
     it("rejects an ownership change through a contract relay", async function () {
       const { vault, owner, attacker } = await deployVault();
