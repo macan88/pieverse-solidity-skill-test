@@ -12,6 +12,10 @@ contract Vault is ReentrancyGuard {
     error InsufficientBalance(uint256 requested, uint256 available);
     error TransferFailed();
 
+    event Deposited(address indexed user, uint256 amount, uint256 newBalance);
+
+    event Withdrawn(address indexed user, uint256 amount, uint256 newBalance);
+
     address public owner;
     mapping(address => uint256) public balances;
 
@@ -22,6 +26,8 @@ contract Vault is ReentrancyGuard {
     /// @notice Deposit ETH into the caller's balance.
     function deposit() external payable {
         balances[msg.sender] += msg.value;
+
+        emit Deposited(msg.sender, msg.value, balances[msg.sender]);
     }
 
     /// @notice Withdraw `amount` ETH from the caller's balance.
@@ -34,6 +40,8 @@ contract Vault is ReentrancyGuard {
 
         // Effects before interaction.
         balances[msg.sender] = currentBalance - amount;
+
+        emit Withdrawn(msg.sender, amount, balances[msg.sender]);
 
         // Interaction happens only after the accounting state is updated.
         (bool success, ) = msg.sender.call{value: amount}("");

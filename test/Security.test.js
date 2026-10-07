@@ -25,6 +25,48 @@ describe("Vault - Security Regression Tests", function () {
     });
   });
 
+  describe("Events", function () {
+    it("emits Deposited with the correct values", async function () {
+      const { vault, alice } = await deployVault();
+
+      const amount = ethers.parseEther("1");
+
+      await expect(
+        vault.connect(alice).deposit({
+          value: amount,
+        })
+      )
+        .to.emit(vault, "Deposited")
+        .withArgs(
+          alice.address,
+          amount,
+          amount
+        );
+    });
+
+    it("emits Withdrawn with the correct values", async function () {
+      const { vault, alice } = await deployVault();
+
+      const depositAmount = ethers.parseEther("2");
+      const withdrawalAmount = ethers.parseEther("1");
+      const remainingBalance = ethers.parseEther("1");
+
+      await vault.connect(alice).deposit({
+        value: depositAmount,
+      });
+
+      await expect(
+        vault.connect(alice).withdraw(withdrawalAmount)
+      )
+        .to.emit(vault, "Withdrawn")
+        .withArgs(
+          alice.address,
+          withdrawalAmount,
+          remainingBalance
+        );
+    });
+  });
+
   describe("tx.origin ownership bypass", function () {
     it("rejects an ownership change through a contract relay", async function () {
       const { vault, owner, attacker } = await deployVault();
